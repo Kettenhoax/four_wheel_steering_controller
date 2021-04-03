@@ -217,9 +217,9 @@ void FourWheelSteeringController::set_command(const FourWheelSteering & cmd_4ws)
   rear_steering_handle_->position.get().set_value(rear_steering_command);
 
   front_left_motor_handle_->command.get().set_value(front_left_motor_command);
-  front_left_motor_handle_->command.get().set_value(front_right_motor_command);
-  front_left_motor_handle_->command.get().set_value(rear_left_motor_command);
-  front_left_motor_handle_->command.get().set_value(rear_right_motor_command);
+  front_right_motor_handle_->command.get().set_value(front_right_motor_command);
+  rear_left_motor_handle_->command.get().set_value(rear_left_motor_command);
+  rear_right_motor_handle_->command.get().set_value(rear_right_motor_command);
 }
 
 controller_interface::return_type FourWheelSteeringController::update()

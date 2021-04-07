@@ -63,11 +63,10 @@ class SymmetricNegativeFourWheelSteering
 {
 private:
   VehicleParams vehicle_params_;
-  bool verify_;
   double steering_track_;
 
   // minimum steering angle in radians to consider the vehicle to take a turn
-  static constexpr double TURN_ANGLE_THRESHOLD = 1e-5;
+  static constexpr double TURN_ANGLE_THRESHOLD = 1e-3;
 
   // turn radii derived from inner and outer steering angle must match by this margin
   static constexpr double TURN_RADIUS_VERIFICATION_MARGIN = 1e-3;
@@ -82,11 +81,8 @@ private:
   double compute_outer_turn_radius(double turn_radius, double outer_steering_angle) const;
 
 public:
-// verify enables checking whether the measured state is actually symmetric,
-// average checks whether the inputs are symmetric AND uses a mean of inputs to compute the output
-  explicit SymmetricNegativeFourWheelSteering(
-    VehicleParams vehicle_params, bool verify = true)
-  : vehicle_params_(vehicle_params), verify_(verify)
+  explicit SymmetricNegativeFourWheelSteering(VehicleParams vehicle_params)
+  : vehicle_params_(vehicle_params)
   {
     rcpputils::require_true(
       vehicle_params_.wheel_base >= std::numeric_limits<double>::epsilon(),
@@ -146,47 +142,63 @@ FourWheelSteering SymmetricNegativeFourWheelSteering::compute_odometry(
   FourWheelSteering result;
   double radial_vel = 0.0;
   if (fabs(state.front_left_steering_angle) > TURN_ANGLE_THRESHOLD) {
+    // 1 is left, -1 is right
+    const double dir = copysign(1.0, state.front_left_steering_angle);
+
     // in steered driving, compute central velocity and steering angle
     const double half_wheelbase = vehicle_params_.wheel_base / 2.0;
     const double half_track = steering_track_ / 2.0;
-    const double inner_steering_angle = state.front_left_steering_angle >
-      0.0 ? state.front_left_steering_angle : -state.front_right_steering_angle;
-
-    const double outer_steering_angle = state.front_left_steering_angle <
-      0.0 ? -state.front_left_steering_angle : state.front_right_steering_angle;
-
-    double turn_radius = half_wheelbase / std::tan(inner_steering_angle) + half_track;
-    if (verify_) {
-      const double turn_radius_by_outer = half_wheelbase / std::tan(outer_steering_angle) -
-        half_track;
-      rcpputils::check_true(
-        fabs(turn_radius_by_outer) - fabs(turn_radius) < TURN_RADIUS_VERIFICATION_MARGIN,
-        "turn radius according to outer steering angle mismatches with inner steering angle");
-      turn_radius = (turn_radius + turn_radius_by_outer) / 2.0;
+    double inner_steering_angle = 0.0;
+    double outer_steering_angle = 0.0;
+    if (dir > 0) {
+      // left is inner
+      inner_steering_angle =
+        (fabs(state.front_left_steering_angle) + fabs(state.rear_left_steering_angle)) /
+        2.0;
+      outer_steering_angle =
+        (fabs(state.front_right_steering_angle) + fabs(state.rear_right_steering_angle)) /
+        2.0;
+    } else {
+      // right is inner
+      inner_steering_angle =
+        (fabs(state.front_right_steering_angle) + fabs(state.rear_right_steering_angle)) /
+        2.0;
+      outer_steering_angle =
+        (fabs(state.front_left_steering_angle) + fabs(state.rear_left_steering_angle)) /
+        2.0;
     }
 
-    const double inner_radial_vel = state.front_left_steering_angle >
-      0.0 ? state.front_left_motor_radial_vel : state.front_right_motor_radial_vel;
+    const double turn_radius_by_inner = half_wheelbase / std::tan(inner_steering_angle) +
+      half_track;
+    const double turn_radius_by_outer = half_wheelbase / std::tan(outer_steering_angle) -
+      half_track;
+    const double turn_radius = (turn_radius_by_inner + turn_radius_by_outer) / 2.0;
+
+    double inner_radial_vel = 0.0;
+    double outer_radial_vel = 0.0;
+    if (dir > 0) {
+      inner_radial_vel = (state.front_left_motor_radial_vel + state.rear_left_motor_radial_vel) /
+        2.0;
+      outer_radial_vel = (state.front_right_motor_radial_vel + state.rear_right_motor_radial_vel) /
+        2.0;
+    } else {
+      inner_radial_vel = (state.front_right_motor_radial_vel + state.rear_right_motor_radial_vel) /
+        2.0;
+      outer_radial_vel = (state.front_left_motor_radial_vel + state.rear_left_motor_radial_vel) /
+        2.0;
+    }
+
+    // project wheel velocities to velocity at center of vehicle
     const double inner_turn_radius = compute_inner_turn_radius(turn_radius, inner_steering_angle);
+    const double radial_vel_by_inner_wheel = turn_radius / inner_turn_radius * inner_radial_vel;
+    const double outer_turn_radius = compute_outer_turn_radius(turn_radius, outer_steering_angle);
+    const double radial_vel_by_outer_wheel = turn_radius / outer_turn_radius * outer_radial_vel;
 
-    // project inner wheel velocity to velocity at center of vehicle
-    radial_vel = turn_radius / inner_turn_radius * inner_radial_vel;
-
-    if (verify_) {
-      const double outer_turn_radius = compute_outer_turn_radius(turn_radius, outer_steering_angle);
-      const double outer_radial_vel = state.front_left_steering_angle <
-        0.0 ? state.front_left_motor_radial_vel : state.front_right_motor_radial_vel;
-      double radial_vel_by_outer_wheel = turn_radius / outer_turn_radius * outer_radial_vel;
-      rcpputils::check_true(
-        fabs(radial_vel_by_outer_wheel) - fabs(radial_vel) < RADIAL_VEL_VERIFICATION_MARGIN,
-        "radial velocity according to outer wheel mismatches with inner wheel");
-      radial_vel = (radial_vel + radial_vel_by_outer_wheel) / 2.0;
-    }
+    radial_vel = (radial_vel_by_inner_wheel + radial_vel_by_outer_wheel) / 2.0;
 
     const double steering_angle = atan(half_wheelbase / turn_radius);
-    const double sign = copysign(1.0, state.front_left_steering_angle);
-    result.front_steering_angle = sign * steering_angle;
-    result.rear_steering_angle = sign * -steering_angle;
+    result.front_steering_angle = dir * steering_angle;
+    result.rear_steering_angle = dir * -steering_angle;
   } else {
     // in straight driving, assume equal velocities and steering angles
     radial_vel = state.front_left_motor_radial_vel +

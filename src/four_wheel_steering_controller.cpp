@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <limits>
 
 #include "four_wheel_steering_controller/four_wheel_steering_controller.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
@@ -35,13 +36,10 @@ using namespace std::chrono_literals;
 using lifecycle_msgs::msg::State;
 using controller_interface::InterfaceConfiguration;
 using controller_interface::interface_configuration_type;
+using four_wheel_steering_msgs::msg::FourWheelSteering;
+using four_wheel_steering_msgs::msg::FourWheelSteeringStamped;
 using hardware_interface::HW_IF_POSITION;
 using hardware_interface::HW_IF_VELOCITY;
-
-static double center_angle(double left, double right)
-{
-  return atan(2 * tan(left) * tan(right) / (tan(left) + tan(right)));
-}
 
 FourWheelSteeringController::FourWheelSteeringController()
 : controller_interface::ControllerInterface() {}
@@ -68,7 +66,6 @@ FourWheelSteeringController::init(const std::string & controller_name)
       vehicle_params_.steering_gear_transmission_ratio);
 
     node->declare_parameter<std::string>("odom_frame_id", odom_params_.frame_id);
-
     node->declare_parameter<double>("cmd_timeout", cmd_timeout_.count() / 1000.0);
   } catch (const std::exception & e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
@@ -132,96 +129,6 @@ InterfaceConfiguration FourWheelSteeringController::state_interface_configuratio
   return {interface_configuration_type::INDIVIDUAL, conf_names};
 }
 
-void FourWheelSteeringController::set_command(const FourWheelSteering & cmd_4ws) const
-{
-  const double tan_front_steering = tan(cmd_4ws.front_steering_angle);
-  const double tan_rear_steering = tan(cmd_4ws.rear_steering_angle);
-
-  const double steering_track = vehicle_params_.wheel_track - 2 *
-    vehicle_params_.distance_steering_to_wheel;
-  const double steering_diff = steering_track * (tan_front_steering - tan_rear_steering) / 2.0;
-
-  auto wb = vehicle_params_.wheel_base;
-
-  double front_left_angle = 0.0;
-  double front_right_angle = 0.0;
-  double rear_left_angle = 0.0;
-  double rear_right_angle = 0.0;
-
-  double front_steering_command = 0.0;
-  double rear_steering_command = 0.0;
-
-  if (fabs(vehicle_params_.wheel_base - fabs(steering_diff)) > 0.001) {
-    // compute optimal angles resulting from ackermann steering
-    front_left_angle = atan(wb * tan_front_steering / (wb - steering_diff));
-    front_right_angle = atan(wb * tan_front_steering / (wb + steering_diff));
-    rear_left_angle = atan(wb * tan_rear_steering / (wb - steering_diff));
-    rear_right_angle = atan(wb * tan_rear_steering / (wb + steering_diff));
-
-    // convert from wheel angle to steering gear angle
-    front_steering_command = -vehicle_params_.steering_gear_transmission_ratio *
-      cmd_4ws.front_steering_angle;
-    rear_steering_command = -vehicle_params_.steering_gear_transmission_ratio *
-      cmd_4ws.rear_steering_angle;
-  }
-
-  double front_left_motor_command = 0.0;
-  double front_right_motor_command = 0.0;
-  double rear_left_motor_command = 0.0;
-  double rear_right_motor_command = 0.0;
-
-  // determine optimal motor speeds based on steering command
-  if (fabs(cmd_4ws.speed) > 0.001) {
-    // distance between the projection of the CIR on the wheelbase and the front axle
-    double l_front = 0;
-    if (fabs(tan(front_left_angle) - tan(front_right_angle)) >
-      0.01)
-    {
-      l_front = tan(front_right_angle) *
-        tan(front_left_angle) * steering_track /
-        (tan(front_left_angle) - tan(front_right_angle));
-    }
-    // distance between the projection of the CIR on the wheelbase and the rear axle
-    double l_rear = 0;
-    if (fabs(tan(rear_left_angle) - tan(rear_right_angle)) > 0.01) {
-      l_rear = tan(rear_right_angle) * tan(rear_left_angle) * steering_track /
-        (tan(rear_left_angle) - tan(rear_right_angle));
-    }
-
-    const double angular_speed_cmd = cmd_4ws.speed * (tan_front_steering - tan_rear_steering) /
-      wb;
-    const double vel_steering_offset =
-      (angular_speed_cmd * vehicle_params_.distance_steering_to_wheel) /
-      vehicle_params_.wheel_radius;
-    const double sign = copysign(1.0, cmd_4ws.speed);
-
-    front_left_motor_command = sign * std::hypot(
-      (cmd_4ws.speed - angular_speed_cmd * steering_track / 2),
-      (l_front * angular_speed_cmd)) / vehicle_params_.wheel_radius -
-      vel_steering_offset;
-    front_right_motor_command = sign * std::hypot(
-      (cmd_4ws.speed + angular_speed_cmd * steering_track / 2),
-      (l_front * angular_speed_cmd)) / vehicle_params_.wheel_radius +
-      vel_steering_offset;
-    rear_left_motor_command = sign * std::hypot(
-      (cmd_4ws.speed - angular_speed_cmd * steering_track / 2),
-      (l_rear * angular_speed_cmd)) / vehicle_params_.wheel_radius -
-      vel_steering_offset;
-    rear_right_motor_command = sign * std::hypot(
-      (cmd_4ws.speed + angular_speed_cmd * steering_track / 2),
-      (l_rear * angular_speed_cmd)) / vehicle_params_.wheel_radius +
-      vel_steering_offset;
-  }
-
-  front_steering_handle_->position.get().set_value(front_steering_command);
-  rear_steering_handle_->position.get().set_value(rear_steering_command);
-
-  front_left_motor_handle_->command.get().set_value(front_left_motor_command);
-  front_right_motor_handle_->command.get().set_value(front_right_motor_command);
-  rear_left_motor_handle_->command.get().set_value(rear_left_motor_command);
-  rear_right_motor_handle_->command.get().set_value(rear_right_motor_command);
-}
-
 controller_interface::return_type FourWheelSteeringController::update()
 {
   auto logger = node_->get_logger();
@@ -251,35 +158,35 @@ controller_interface::return_type FourWheelSteeringController::update()
     last_msg->data.rear_steering_angle = 0.0;
   }
 
-  const auto vehicle = vehicle_params_;
+  FourWheelSteeringState state_4ws;
+  state_4ws.front_left_steering_angle = front_steering_handle_->left_kingpin.get().get_value();
+  state_4ws.front_right_steering_angle = front_steering_handle_->right_kingpin.get().get_value();
+  state_4ws.rear_left_steering_angle = rear_steering_handle_->left_kingpin.get().get_value();
+  state_4ws.rear_right_steering_angle = rear_steering_handle_->right_kingpin.get().get_value();
+  state_4ws.front_left_motor_radial_vel = front_left_motor_handle_->state.get().get_value();
+  state_4ws.front_right_motor_radial_vel = front_right_motor_handle_->state.get().get_value();
+  state_4ws.rear_left_motor_radial_vel = rear_left_motor_handle_->state.get().get_value();
+  state_4ws.rear_right_motor_radial_vel = rear_right_motor_handle_->state.get().get_value();
+  auto odom_4ws = vehicle_model_->compute_odometry(state_4ws);
 
-  auto front_left_kingpin_angle = front_steering_handle_->left_kingpin.get().get_value();
-  auto front_right_kingpin_angle = front_steering_handle_->right_kingpin.get().get_value();
-  auto rear_left_kingpin_angle = rear_steering_handle_->left_kingpin.get().get_value();
-  auto rear_right_kingpin_angle = rear_steering_handle_->right_kingpin.get().get_value();
-  double front_angle = center_angle(front_left_kingpin_angle, front_right_kingpin_angle);
-  double rear_angle = center_angle(rear_left_kingpin_angle, rear_right_kingpin_angle);
-
-  auto avg_radps = 0.0;
-  avg_radps += front_left_motor_handle_->state.get().get_value();
-  avg_radps += front_right_motor_handle_->state.get().get_value();
-  avg_radps += rear_left_motor_handle_->state.get().get_value();
-  avg_radps += rear_right_motor_handle_->state.get().get_value();
-  auto speed = vehicle.wheel_radius * avg_radps / 4;
-
-  if (pub_odom_realtime_->trylock()) {
-    auto & odometry_message = pub_odom_realtime_->msg_;
-    odometry_message.header.stamp = current_time;
-    odometry_message.data.speed = speed;
-    odometry_message.data.front_steering_angle = front_angle;
-    odometry_message.data.rear_steering_angle = rear_angle;
-    pub_odom_realtime_->unlockAndPublish();
-  }
+  auto cmds_4ws = vehicle_model_->compute_commands(last_msg->data);
+  front_steering_handle_->position.get().set_value(cmds_4ws.front_steering_motor_angle);
+  rear_steering_handle_->position.get().set_value(cmds_4ws.rear_steering_motor_angle);
+  front_left_motor_handle_->command.get().set_value(cmds_4ws.front_left_motor_radial_vel);
+  front_right_motor_handle_->command.get().set_value(cmds_4ws.front_right_motor_radial_vel);
+  rear_left_motor_handle_->command.get().set_value(cmds_4ws.rear_left_motor_radial_vel);
+  rear_right_motor_handle_->command.get().set_value(cmds_4ws.rear_right_motor_radial_vel);
 
   const auto update_dt = current_time - previous_update_timestamp_;
   previous_update_timestamp_ = current_time;
 
-  set_command(last_msg->data);
+  if (pub_odom_realtime_->trylock()) {
+    auto & odometry_message = pub_odom_realtime_->msg_;
+    odometry_message.header.stamp = current_time;
+    odometry_message.data = odom_4ws;
+    pub_odom_realtime_->unlockAndPublish();
+  }
+
   return controller_interface::return_type::SUCCESS;
 }
 
@@ -294,6 +201,12 @@ CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle:
     node_->get_parameter("distance_steering_to_wheel").as_double();
   vehicle_params_.steering_gear_transmission_ratio = node_->get_parameter(
     "steering_gear_transmission_ratio").as_double();
+  try {
+    vehicle_model_ = std::make_unique<SymmetricNegativeFourWheelSteering>(vehicle_params_);
+  } catch (const std::invalid_argument & e) {
+    RCLCPP_ERROR(logger, e.what());
+    return CallbackReturn::ERROR;
+  }
 
   odom_params_.frame_id = node_->get_parameter("odom_frame_id").as_string();
   cmd_timeout_ =

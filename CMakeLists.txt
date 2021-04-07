@@ -19,8 +19,31 @@ ament_auto_add_library(four_wheel_steering_controller SHARED
 pluginlib_export_plugin_description_file(controller_interface four_wheel_steering_controller_plugin.xml)
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gmock REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+
   ament_lint_auto_find_test_dependencies()
+
+  ament_add_gmock(test_four_wheel_steering_controller
+    test/test_four_wheel_steering_controller.cpp
+    ENV config_file=${CMAKE_CURRENT_SOURCE_DIR}/test/config/test_four_wheel_steering_controller.yaml)
+  target_include_directories(test_four_wheel_steering_controller PRIVATE include)
+  target_link_libraries(test_four_wheel_steering_controller
+    four_wheel_steering_controller
+  )
+  ament_target_dependencies(test_four_wheel_steering_controller
+    ${four_wheel_steering_controller_FOUND_TEST_DEPENDS}
+  )
+
+  ament_add_gmock(test_four_wheel_steering_model
+    test/test_four_wheel_steering_model.cpp)
+  target_include_directories(test_four_wheel_steering_model PRIVATE include)
+  target_link_libraries(test_four_wheel_steering_model
+    four_wheel_steering_controller
+  )
+  ament_target_dependencies(test_four_wheel_steering_model
+    ${four_wheel_steering_controller_FOUND_TEST_DEPENDS}
+  )
 endif()
 
 ament_auto_package()

@@ -204,7 +204,7 @@ protected:
 TEST_F(TestFourWheelSteeringController, configure_fails_without_parameters)
 {
   const auto ret = controller_->init(controller_name);
-  ASSERT_EQ(ret, controller_interface::return_type::SUCCESS);
+  ASSERT_EQ(ret, controller_interface::return_type::OK);
   ASSERT_EQ(controller_->on_configure(rclcpp_lifecycle::State()), CallbackReturn::ERROR);
 }
 
@@ -213,7 +213,7 @@ TEST_F(TestFourWheelSteeringController, correct_straight_driving)
   constexpr double THRESHOLD = 1e-12;
 
   const auto ret = controller_->init(controller_name);
-  ASSERT_EQ(ret, controller_interface::return_type::SUCCESS);
+  ASSERT_EQ(ret, controller_interface::return_type::OK);
 
   controller_->get_node()->set_parameter(rclcpp::Parameter("wheel_base", 1.5));
   controller_->get_node()->set_parameter(rclcpp::Parameter("wheel_track", 1.0));
@@ -237,7 +237,7 @@ TEST_F(TestFourWheelSteeringController, correct_straight_driving)
   send_cmd(1.0, 0.0);
   ASSERT_TRUE(controller_->wait_for_cmd(executor));
 
-  ASSERT_EQ(controller_->update(), controller_interface::return_type::SUCCESS);
+  ASSERT_EQ(controller_->update(), controller_interface::return_type::OK);
   EXPECT_NEAR(4.0, front_left_motor_vel_cmd_.get_value(), THRESHOLD);
   EXPECT_NEAR(4.0, front_right_motor_vel_cmd_.get_value(), THRESHOLD);
   EXPECT_NEAR(4.0, rear_left_motor_vel_cmd_.get_value(), THRESHOLD);
@@ -248,7 +248,7 @@ TEST_F(TestFourWheelSteeringController, correct_straight_driving)
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
   state = controller_->deactivate();
   ASSERT_EQ(state.id(), State::PRIMARY_STATE_INACTIVE);
-  ASSERT_EQ(controller_->update(), controller_interface::return_type::SUCCESS);
+  ASSERT_EQ(controller_->update(), controller_interface::return_type::OK);
 
   EXPECT_EQ(0.0, front_left_motor_vel_cmd_.get_value()) << "Wheels are halted on deactivate()";
   EXPECT_EQ(0.0, front_right_motor_vel_cmd_.get_value()) << "Wheels are halted on deactivate()";

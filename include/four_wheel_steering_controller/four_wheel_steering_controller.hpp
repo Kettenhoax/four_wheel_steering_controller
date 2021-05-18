@@ -104,6 +104,7 @@ protected:
   struct OdometryParams
   {
     std::string frame_id = "base_link";
+    size_t frequency_offset = 1;
   } odom_params_;
 
   VehicleParams vehicle_params_;
@@ -123,6 +124,7 @@ protected:
   received_cmd_msg_ptr_{
     nullptr};
 
+  size_t update_index_{0};
   rclcpp::Time previous_update_timestamp_{0};
   bool is_halted = false;
 

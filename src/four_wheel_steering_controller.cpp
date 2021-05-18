@@ -49,7 +49,7 @@ FourWheelSteeringController::init(const std::string & controller_name)
 {
   // initialize lifecycle node
   auto ret = ControllerInterface::init(controller_name);
-  if (ret != controller_interface::return_type::SUCCESS) {
+  if (ret != controller_interface::return_type::OK) {
     return ret;
   }
 
@@ -66,13 +66,14 @@ FourWheelSteeringController::init(const std::string & controller_name)
       vehicle_params_.steering_gear_transmission_ratio);
 
     node->declare_parameter<std::string>("odom_frame_id", odom_params_.frame_id);
+    node->declare_parameter<int>("odom_frequency_offset", 1);
     node->declare_parameter<double>("cmd_timeout", cmd_timeout_.count() / 1000.0);
   } catch (const std::exception & e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
     return controller_interface::return_type::ERROR;
   }
 
-  return controller_interface::return_type::SUCCESS;
+  return controller_interface::return_type::OK;
 }
 
 InterfaceConfiguration FourWheelSteeringController::command_interface_configuration() const
@@ -137,7 +138,7 @@ controller_interface::return_type FourWheelSteeringController::update()
       halt();
       is_halted = true;
     }
-    return controller_interface::return_type::SUCCESS;
+    return controller_interface::return_type::OK;
   }
 
   const auto current_time = node_->get_clock()->now();
@@ -180,14 +181,17 @@ controller_interface::return_type FourWheelSteeringController::update()
   const auto update_dt = current_time - previous_update_timestamp_;
   previous_update_timestamp_ = current_time;
 
-  if (pub_odom_realtime_->trylock()) {
-    auto & odometry_message = pub_odom_realtime_->msg_;
-    odometry_message.header.stamp = current_time;
-    odometry_message.data = odom_4ws;
-    pub_odom_realtime_->unlockAndPublish();
+  if (0 == (update_index_ % odom_params_.frequency_offset)) {
+    if (pub_odom_realtime_->trylock()) {
+      auto & odometry_message = pub_odom_realtime_->msg_;
+      odometry_message.header.stamp = current_time;
+      odometry_message.data = odom_4ws;
+      pub_odom_realtime_->unlockAndPublish();
+    }
   }
+  update_index_++;
 
-  return controller_interface::return_type::SUCCESS;
+  return controller_interface::return_type::OK;
 }
 
 CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle::State &)
@@ -209,6 +213,11 @@ CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle:
   }
 
   odom_params_.frame_id = node_->get_parameter("odom_frame_id").as_string();
+  odom_params_.frequency_offset = node_->get_parameter("odom_frequency_offset").as_int();
+  if (odom_params_.frequency_offset < 1) {
+    RCLCPP_ERROR(logger, "odom_frequency_offset must be a positive integer");
+    return CallbackReturn::ERROR;
+  }
   cmd_timeout_ =
     std::chrono::milliseconds{static_cast<int>(node_->get_parameter("cmd_timeout").as_double() *
     1000.0)};

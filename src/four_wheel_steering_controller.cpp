@@ -206,7 +206,7 @@ CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle:
   vehicle_params_.steering_gear_transmission_ratio = node_->get_parameter(
     "steering_gear_transmission_ratio").as_double();
   try {
-    vehicle_model_ = std::make_unique<SymmetricNegativeFourWheelSteering>(vehicle_params_);
+    vehicle_model_ = std::make_unique<GenericFourWheelSteering>(vehicle_params_);
   } catch (const std::invalid_argument & e) {
     RCLCPP_ERROR(logger, e.what());
     return CallbackReturn::ERROR;

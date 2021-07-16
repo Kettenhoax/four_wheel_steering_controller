@@ -28,7 +28,7 @@
 #include "realtime_tools/realtime_box.h"
 #include "realtime_tools/realtime_publisher.h"
 
-#include "four_wheel_steering_controller/four_wheel_steering_model.hpp"
+#include "four_wheel_steering_controller/model.hpp"
 
 namespace four_wheel_steering_controller
 {
@@ -108,7 +108,7 @@ protected:
   } odom_params_;
 
   VehicleParams vehicle_params_;
-  std::unique_ptr<SymmetricNegativeFourWheelSteering> vehicle_model_;
+  std::unique_ptr<SteeringModel> vehicle_model_;
 
   rclcpp::Publisher<four_wheel_steering_msgs::msg::FourWheelSteeringStamped>::SharedPtr pub_odom_;
   realtime_tools::RealtimePublisherSharedPtr<four_wheel_steering_msgs::msg::FourWheelSteeringStamped>

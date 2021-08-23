@@ -42,7 +42,7 @@ using hardware_interface::HW_IF_POSITION;
 using hardware_interface::HW_IF_VELOCITY;
 
 FourWheelSteeringController::FourWheelSteeringController()
-: controller_interface::ControllerInterface() {}
+: controller_interface::ControllerInterface(), cmd_timeout_(500ms) {}
 
 controller_interface::return_type
 FourWheelSteeringController::init(const std::string & controller_name)
@@ -67,7 +67,7 @@ FourWheelSteeringController::init(const std::string & controller_name)
 
     node->declare_parameter<std::string>("odom_frame_id", odom_params_.frame_id);
     node->declare_parameter<int>("odom_frequency_offset", 1);
-    node->declare_parameter<double>("cmd_timeout", cmd_timeout_.count() / 1000.0);
+    node->declare_parameter<double>("cmd_timeout", static_cast<double>(cmd_timeout_.seconds()));
   } catch (const std::exception & e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
     return controller_interface::return_type::ERROR;
@@ -133,6 +133,7 @@ InterfaceConfiguration FourWheelSteeringController::state_interface_configuratio
 controller_interface::return_type FourWheelSteeringController::update()
 {
   auto logger = node_->get_logger();
+  auto clock = node_->get_clock();
   if (get_current_state().id() == State::PRIMARY_STATE_INACTIVE) {
     if (!is_halted) {
       halt();
@@ -141,7 +142,7 @@ controller_interface::return_type FourWheelSteeringController::update()
     return controller_interface::return_type::OK;
   }
 
-  const auto current_time = node_->get_clock()->now();
+  const auto current_time = clock->now();
 
   FourWheelSteeringStamped::SharedPtr last_msg;
   received_cmd_msg_ptr_.get(last_msg);
@@ -152,11 +153,21 @@ controller_interface::return_type FourWheelSteeringController::update()
   }
 
   const auto dt = current_time - last_msg->header.stamp;
-  // Brake if command has timeout, override the stored command
   if (dt > cmd_timeout_) {
-    last_msg->data.speed = 0.0;
-    last_msg->data.front_steering_angle = 0.0;
-    last_msg->data.rear_steering_angle = 0.0;
+    halt();
+  } else if (dt.nanoseconds() < -cmd_timeout_.nanoseconds()) {
+    RCLCPP_WARN_THROTTLE(
+      logger, *clock, (1000ms).count(), "command age is negative, are %s timestamps in ROS time?", 
+      sub_cmd_->get_topic_name());
+    halt();
+  } else {
+    auto cmds_4ws = vehicle_model_->compute_commands(last_msg->data);
+    front_steering_handle_->position.get().set_value(cmds_4ws.front_steering_motor_angle);
+    rear_steering_handle_->position.get().set_value(cmds_4ws.rear_steering_motor_angle);
+    front_left_motor_handle_->command.get().set_value(cmds_4ws.front_left_motor_radial_vel);
+    front_right_motor_handle_->command.get().set_value(cmds_4ws.front_right_motor_radial_vel);
+    rear_left_motor_handle_->command.get().set_value(cmds_4ws.rear_left_motor_radial_vel);
+    rear_right_motor_handle_->command.get().set_value(cmds_4ws.rear_right_motor_radial_vel);
   }
 
   FourWheelSteeringState state_4ws;
@@ -169,17 +180,6 @@ controller_interface::return_type FourWheelSteeringController::update()
   state_4ws.rear_left_motor_radial_vel = rear_left_motor_handle_->state.get().get_value();
   state_4ws.rear_right_motor_radial_vel = rear_right_motor_handle_->state.get().get_value();
   auto odom_4ws = vehicle_model_->compute_odometry(state_4ws);
-
-  auto cmds_4ws = vehicle_model_->compute_commands(last_msg->data);
-  front_steering_handle_->position.get().set_value(cmds_4ws.front_steering_motor_angle);
-  rear_steering_handle_->position.get().set_value(cmds_4ws.rear_steering_motor_angle);
-  front_left_motor_handle_->command.get().set_value(cmds_4ws.front_left_motor_radial_vel);
-  front_right_motor_handle_->command.get().set_value(cmds_4ws.front_right_motor_radial_vel);
-  rear_left_motor_handle_->command.get().set_value(cmds_4ws.rear_left_motor_radial_vel);
-  rear_right_motor_handle_->command.get().set_value(cmds_4ws.rear_right_motor_radial_vel);
-
-  const auto update_dt = current_time - previous_update_timestamp_;
-  previous_update_timestamp_ = current_time;
 
   if (0 == (update_index_ % odom_params_.frequency_offset)) {
     if (pub_odom_realtime_->trylock()) {
@@ -218,10 +218,7 @@ CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle:
     RCLCPP_ERROR(logger, "odom_frequency_offset must be a positive integer");
     return CallbackReturn::ERROR;
   }
-  cmd_timeout_ =
-    std::chrono::milliseconds{static_cast<int>(node_->get_parameter("cmd_timeout").as_double() *
-    1000.0)};
-
+  cmd_timeout_ = rclcpp::Duration::from_seconds(node_->get_parameter("cmd_timeout").as_double());
   if (!reset()) {
     return CallbackReturn::ERROR;
   }
@@ -261,8 +258,6 @@ CallbackReturn FourWheelSteeringController::on_configure(const rclcpp_lifecycle:
 
   // initialize odom values zeros
   odometry_message.data = FourWheelSteering(rosidl_runtime_cpp::MessageInitialization::ALL);
-
-  previous_update_timestamp_ = node_->get_clock()->now();
   return CallbackReturn::SUCCESS;
 }
 

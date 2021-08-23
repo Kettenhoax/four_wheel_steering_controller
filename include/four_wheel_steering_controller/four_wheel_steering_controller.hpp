@@ -115,7 +115,7 @@ protected:
   pub_odom_realtime_;
 
   // Timeout after which commands are considered too old to apply
-  std::chrono::milliseconds cmd_timeout_{500};
+  rclcpp::Duration cmd_timeout_;
 
   bool subscriber_is_active_ = false;
   rclcpp::Subscription<four_wheel_steering_msgs::msg::FourWheelSteeringStamped>::SharedPtr sub_cmd_;
@@ -125,7 +125,6 @@ protected:
     nullptr};
 
   size_t update_index_{0};
-  rclcpp::Time previous_update_timestamp_{0};
   bool is_halted = false;
 
   std::unique_ptr<MotorHandle> configure_motor(const std::string & name);

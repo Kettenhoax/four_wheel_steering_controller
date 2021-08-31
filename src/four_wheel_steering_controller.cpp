@@ -55,19 +55,19 @@ FourWheelSteeringController::init(const std::string & controller_name)
 
   try {
     auto node = get_node();
-    node->declare_parameter<double>("wheel_base", vehicle_params_.wheel_base);
-    node->declare_parameter<double>("wheel_track", vehicle_params_.wheel_track);
-    node->declare_parameter<double>("wheel_radius", vehicle_params_.wheel_radius);
-    node->declare_parameter<double>(
+    auto_declare("wheel_base", vehicle_params_.wheel_base);
+    auto_declare("wheel_track", vehicle_params_.wheel_track);
+    auto_declare("wheel_radius", vehicle_params_.wheel_radius);
+    auto_declare(
       "distance_steering_to_wheel",
       vehicle_params_.distance_steering_to_wheel);
-    node->declare_parameter<double>(
+    auto_declare(
       "steering_gear_transmission_ratio",
       vehicle_params_.steering_gear_transmission_ratio);
 
-    node->declare_parameter<std::string>("odom_frame_id", odom_params_.frame_id);
-    node->declare_parameter<int>("odom_frequency_offset", 1);
-    node->declare_parameter<double>("cmd_timeout", static_cast<double>(cmd_timeout_.seconds()));
+    auto_declare("odom_frame_id", odom_params_.frame_id);
+    auto_declare("odom_frequency_offset", 1);
+    auto_declare("cmd_timeout", static_cast<double>(cmd_timeout_.seconds()));
   } catch (const std::exception & e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
     return controller_interface::return_type::ERROR;

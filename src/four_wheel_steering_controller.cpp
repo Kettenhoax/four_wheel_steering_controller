@@ -134,7 +134,7 @@ controller_interface::return_type FourWheelSteeringController::update()
 {
   auto logger = node_->get_logger();
   auto clock = node_->get_clock();
-  if (get_current_state().id() == State::PRIMARY_STATE_INACTIVE) {
+  if (get_state().id() == State::PRIMARY_STATE_INACTIVE) {
     if (!is_halted) {
       halt();
       is_halted = true;

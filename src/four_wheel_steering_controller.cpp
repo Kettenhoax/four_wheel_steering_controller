@@ -44,15 +44,9 @@ using hardware_interface::HW_IF_VELOCITY;
 FourWheelSteeringController::FourWheelSteeringController()
 : controller_interface::ControllerInterface(), cmd_timeout_(500ms) {}
 
-controller_interface::return_type
-FourWheelSteeringController::init(const std::string & controller_name)
+CallbackReturn
+FourWheelSteeringController::on_init()
 {
-  // initialize lifecycle node
-  auto ret = ControllerInterface::init(controller_name);
-  if (ret != controller_interface::return_type::OK) {
-    return ret;
-  }
-
   try {
     auto node = get_node();
     auto_declare("wheel_base", vehicle_params_.wheel_base);
@@ -70,10 +64,9 @@ FourWheelSteeringController::init(const std::string & controller_name)
     auto_declare("cmd_timeout", static_cast<double>(cmd_timeout_.seconds()));
   } catch (const std::exception & e) {
     fprintf(stderr, "Exception thrown during init stage with message: %s \n", e.what());
-    return controller_interface::return_type::ERROR;
+    return CallbackReturn::ERROR;
   }
-
-  return controller_interface::return_type::OK;
+  return CallbackReturn::SUCCESS;
 }
 
 InterfaceConfiguration FourWheelSteeringController::command_interface_configuration() const
@@ -130,7 +123,7 @@ InterfaceConfiguration FourWheelSteeringController::state_interface_configuratio
   return {interface_configuration_type::INDIVIDUAL, conf_names};
 }
 
-controller_interface::return_type FourWheelSteeringController::update()
+controller_interface::return_type FourWheelSteeringController::update(const rclcpp::Time & time, const rclcpp::Duration & period)
 {
   auto logger = node_->get_logger();
   auto clock = node_->get_clock();

@@ -28,7 +28,6 @@ if(BUILD_TESTING)
   ament_add_gmock(test_four_wheel_steering_controller
     test/test_four_wheel_steering_controller.cpp
     ENV config_file=${CMAKE_CURRENT_SOURCE_DIR}/test/config/test_four_wheel_steering_controller.yaml)
-  # target_include_directories(test_four_wheel_steering_controller PRIVATE include)
   target_link_libraries(test_four_wheel_steering_controller
     four_wheel_steering_controller
   )
@@ -38,7 +37,6 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_four_wheel_steering_model
     test/test_four_wheel_steering_model.cpp)
-  # target_include_directories(test_four_wheel_steering_model PRIVATE include)
   target_link_libraries(test_four_wheel_steering_model
     four_wheel_steering_controller
   )

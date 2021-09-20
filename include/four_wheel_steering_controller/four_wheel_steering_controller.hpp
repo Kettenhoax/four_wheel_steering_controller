@@ -58,8 +58,7 @@ class FourWheelSteeringController : public controller_interface::ControllerInter
 public:
   FourWheelSteeringController();
 
-  controller_interface::return_type
-  init(const std::string & controller_name) override;
+  CallbackReturn on_init() override;
 
   controller_interface::InterfaceConfiguration
   command_interface_configuration() const override;
@@ -67,7 +66,7 @@ public:
   controller_interface::InterfaceConfiguration
   state_interface_configuration() const override;
 
-  controller_interface::return_type update() override;
+  controller_interface::return_type update(const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
 
